@@ -1,72 +1,135 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-  <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{86AE56BE-74A6-470B-B9BC-35791F59816B}</ProjectGuid>
-    <OutputType>Exe</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Humanizer</RootNamespace>
-    <AssemblyName>Humanizer</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <PreBuildEvent />
-    <PostBuildEvent />
-    <OutputPath>bin\Release</OutputPath>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>x86</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>x86</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="LeagueSharp">
-      <HintPath>C:\Users\Administrator\Documents\Downloads\LeagueSharp\System\LeagueSharp.dll</HintPath>
-    </Reference>
-    <Reference Include="LeagueSharp.Common">
-      <HintPath>C:\Users\Administrator\Documents\Downloads\LeagueSharp\System\LeagueSharp.Common.dll</HintPath>
-    </Reference>
-    <Reference Include="SharpDX">
-      <HintPath>C:\Users\Administrator\Documents\Downloads\LeagueSharp\System\SharpDX.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Extensions.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="App.config" />
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
-</Project>
+#region
+
+using System;
+using System.Collections.Generic;
+using LeagueSharp;
+using LeagueSharp.Common;
+using SharpDX;
+
+#endregion
+
+namespace Humanizer
+{
+    public class Program
+    {
+        public static Menu Menu;
+        public static int LastMove;
+        public static Obj_AI_Base Player = ObjectManager.Player;
+        public static Dictionary<SpellSlot, int> LastCast = new Dictionary<SpellSlot, int>();
+        public static Render.Text BlockedMovement;
+        public static Render.Text BlockedSpells;
+        public static int BlockedSpellCount;
+        public static int BlockedMoveCount;
+        public static int NextMovementDelay;
+
+        public static List<SpellSlot> Items = new List<SpellSlot>
+        {
+            SpellSlot.Item1,
+            SpellSlot.Item2,
+            SpellSlot.Item3,
+            SpellSlot.Item4,
+            SpellSlot.Item5,
+            SpellSlot.Item6,
+            SpellSlot.Trinket
+        };
+
+        private static void Main(string[] args)
+        {
+            CustomEvents.Game.OnGameLoad += Game_OnGameLoad;
+        }
+
+        private static void Game_OnGameLoad(EventArgs args)
+        {
+            Menu = new Menu("Humanizer", "Humanizer", true);
+
+            var spells = Menu.AddSubMenu(new Menu("Spells", "Spells"));
+
+            foreach (var spell in Items)
+
+            {
+                var menu = spells.AddSubMenu(new Menu(spell.ToString(), spell.ToString()));
+                menu.AddItem(new MenuItem("Enabled" + spell, "Delay " + spell).SetValue(true));
+                menu.AddItem(new MenuItem("MinDelay" + spell, "Minimum Delay").SetValue(new Slider(80)));
+                menu.AddItem(new MenuItem("MaxDelay" + spell, "Maximum Delay").SetValue(new Slider(80)));
+                LastCast.Add(spell, 0);
+            }
+
+            spells.AddItem(new MenuItem("DrawSpells", "Draw Blocked Spell Count").SetValue(true));
+
+            var move = Menu.AddSubMenu(new Menu("Movement", "Movement"));
+            move.AddItem(new MenuItem("MovementEnabled", "Enabled").SetValue(true));
+            move.AddItem(new MenuItem("MinDelay", "Minimum Delay")).SetValue(new Slider(80));
+            move.AddItem(new MenuItem("MaxDelay", "Maximum Delay")).SetValue(new Slider(200, 100, 400));
+            move.AddItem(new MenuItem("DrawMove", "Draw Blocked Movement Count").SetValue(true));
+
+            Menu.AddToMainMenu();
+
+            BlockedSpells = new Render.Text(
+                "Blocked Spells: ", Drawing.Width - 200, Drawing.Height - 600, 28, Color.Green);
+            BlockedSpells.VisibleCondition += sender => Menu.Item("DrawSpells").IsActive();
+            BlockedSpells.TextUpdate += () => "Blocked Spells: " + BlockedSpellCount;
+            BlockedSpells.Add();
+
+            BlockedMovement = new Render.Text(
+                "Blocked Move: ", Drawing.Width - 200, Drawing.Height - 625, 28, Color.Green);
+            BlockedMovement.VisibleCondition += sender => Menu.Item("DrawMove").IsActive();
+            BlockedMovement.TextUpdate += () => "Blocked Move: " + BlockedMoveCount;
+            BlockedMovement.Add();
+
+
+            Obj_AI_Base.OnIssueOrder += Obj_AI_Base_OnIssueOrder;
+            Spellbook.OnCastSpell += Spellbook_OnCastSpell;
+        }
+
+        private static void Spellbook_OnCastSpell(Spellbook sender, SpellbookCastSpellEventArgs args)
+        {
+            var spell = args.Slot;
+            var senderValid = sender != null && sender.Owner != null && sender.Owner.IsMe;
+
+            if (!senderValid || !Items.Contains(spell) || !Menu.Item("Enabled" + spell).IsActive())
+            {
+                return;
+            }
+
+            var min = Menu.Item("MinDelay" + spell).GetValue<Slider>().Value;
+            var max = Menu.Item("MaxDelay" + spell).GetValue<Slider>().Value;
+            var delay = min >= max ? min : WeightedRandom.Next(min, max);
+
+            if (LastCast[spell].TimeSince() < delay)
+            {
+                BlockedSpellCount++;
+                args.Process = false;
+                return;
+            }
+
+            LastCast[spell] = Utils.TickCount;
+        }
+
+        private static void Obj_AI_Base_OnIssueOrder(Obj_AI_Base sender, GameObjectIssueOrderEventArgs args)
+        {
+            var senderValid = sender != null && sender.IsValid && sender.IsMe;
+
+            if (!senderValid || args.Order != GameObjectOrder.MoveTo || !Menu.Item("MovementEnabled").IsActive())
+            {
+                return;
+            }
+
+            if (NextMovementDelay == 0)
+            {
+                var min = Menu.Item("MinDelay").GetValue<Slider>().Value;
+                var max = Menu.Item("MaxDelay").GetValue<Slider>().Value;
+                NextMovementDelay = min > max ? min : WeightedRandom.Next(min, max);
+            }
+
+            if (LastMove.TimeSince() < NextMovementDelay)
+            {
+                NextMovementDelay = 0;
+                BlockedMoveCount++;
+                args.Process = false;
+                return;
+            }
+
+            LastMove = Utils.TickCount;
+        }
+    }
+}
